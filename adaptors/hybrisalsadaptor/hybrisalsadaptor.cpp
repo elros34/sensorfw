@@ -52,7 +52,7 @@ bool HybrisAlsAdaptor::startSensor()
 {
     if (!(HybrisAdaptor::startSensor()))
         return false;
-    if (isRunning() && !powerStatePath.isEmpty())
+    if (!powerStatePath.isEmpty())
         writeToFile(powerStatePath, "1");
     sensordLogD() << "Hybris HybrisAlsAdaptor start\n";
     return true;
@@ -60,65 +60,20 @@ bool HybrisAlsAdaptor::startSensor()
 
 void HybrisAlsAdaptor::sendInitialData()
 {
-    QFile file("/proc/bus/input/devices");
-    if (file.open(QIODevice::ReadOnly | QIODevice::Text)) {
-        bool ok = false;
-        QString inputDev;
+    TimedUnsigned *d = buffer->nextSlot();
+    d->timestamp_ = Utils::getTimeStamp();
+    d->value_ = lastLightValue - 1; // workaround for qtsensors
+    buffer->commit();
+    buffer->wakeUpReaders();
 
-        QTextStream in(&file);
-        QString line = in.readLine();
-        while (!line.isNull()) {
-            if (ok && line.startsWith("S: Sysfs=")) {
-                inputDev = line.split("=").at(1).section("/",-1);
-                ok = false;
-                break;
-            }
-            if (line.contains("als")) {
-                ok = true;
-            }
-            line = in.readLine();
-        }
-
-        if (inputDev.isEmpty()) {
-            sensordLogW() << "No sysfs als device found";
-            return;
-        }
-
-        struct input_absinfo absinfo;
-        int fd;
-        inputDev.replace("input","event");
-        inputDev.prepend("/dev/input/");
-
-        if ((fd = open(inputDev.toLatin1(), O_RDONLY)) > -1) {
-
-            if (!ioctl(fd, EVIOCGABS(ABS_MISC), &absinfo)) {
-                if (absinfo.value != (signed)lastLightValue)
-                    lastLightValue = absinfo.value;
-
-                TimedUnsigned *d = buffer->nextSlot();
-                d->timestamp_ = Utils::getTimeStamp();
-                d->value_ = lastLightValue;
-                buffer->commit();
-                buffer->wakeUpReaders();
-            } else {
-                qDebug() << "ioctl not opened" ;
-            }
-            close(fd);
-        } else {
-            qDebug() << "could not open als evdev";
-            TimedUnsigned *d = buffer->nextSlot();
-            d->timestamp_ = Utils::getTimeStamp();
-            d->value_ = lastLightValue;
-            buffer->commit();
-            buffer->wakeUpReaders();
-        }
-    }
+    if (!powerStatePath.isEmpty())
+        writeToFile(powerStatePath, "1"); // writting 1 will trigger data change
 }
 
 void HybrisAlsAdaptor::stopSensor()
 {
     HybrisAdaptor::stopSensor();
-    if (!isRunning() && !powerStatePath.isEmpty())
+    if (!powerStatePath.isEmpty())
         writeToFile(powerStatePath, "0");
     sensordLogD() << "Hybris HybrisAlsAdaptor stop\n";
 }

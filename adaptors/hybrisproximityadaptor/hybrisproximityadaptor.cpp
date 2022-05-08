@@ -57,7 +57,7 @@ bool HybrisProximityAdaptor::startSensor()
 {
     if (!(HybrisAdaptor::startSensor()))
         return false;
-    if (isRunning() && !powerStatePath.isEmpty())
+    if (!powerStatePath.isEmpty())
         writeToFile(powerStatePath, "1");
     sensordLogD() << "HybrisProximityAdaptor start\n";
     return true;
@@ -65,68 +65,23 @@ bool HybrisProximityAdaptor::startSensor()
 
 void HybrisProximityAdaptor::sendInitialData()
 {
-   QFile file("/proc/bus/input/devices");
-   if (file.open(QIODevice::ReadOnly | QIODevice::Text)) {
-       bool ok = false;
-       QString inputDev;
+   ProximityData *d = buffer->nextSlot();
 
-       QTextStream in(&file);
-       QString line = in.readLine();
-       while (!line.isNull()) {
-           if (ok && line.startsWith("H: Handlers")) {
-               inputDev = line.split("=").at(1).section("/",-1).simplified();
-               ok = false;
-               break;
-           }
-           if (line.contains("proximity")) {
-               ok = true;
-           }
-           line = in.readLine();
-       }
+   d->timestamp_ = Utils::getTimeStamp();
+   d->withinProximity_ = false;
+   d->value_ = maxRange();
 
-       if (inputDev.isEmpty()) {
-           sensordLogW() << "No sysfs proximity device found";
-           return;
-       }
+   buffer->commit();
+   buffer->wakeUpReaders();
 
-       struct input_absinfo absinfo;
-       int fd;
-       inputDev.prepend("/dev/input/");
-
-       if ((fd = open(inputDev.toLatin1(), O_RDONLY)) > -1) {
-
-           if (!ioctl(fd, EVIOCGABS(ABS_DISTANCE), &absinfo)) {
-               bool near = false;
-               if (absinfo.value == 0)
-                   near = true;
-               ProximityData *d = buffer->nextSlot();
-               d->timestamp_ = Utils::getTimeStamp();
-               d->withinProximity_ = near;
-               d->value_ = absinfo.value;
-               buffer->commit();
-               buffer->wakeUpReaders();
-           } else {
-               qDebug() << "ioctl not opened" ;
-           }
-           close(fd);
-       } else {
-           qDebug() << "could not open proximity evdev";
-           ProximityData *d = buffer->nextSlot();
-
-           d->timestamp_ = Utils::getTimeStamp();
-           d->withinProximity_ = false;
-           d->value_ = 10;
-
-           buffer->commit();
-           buffer->wakeUpReaders();
-       }
-   }
+   if (!powerStatePath.isEmpty())
+       writeToFile(powerStatePath, "1"); // writting 1 will trigger data change
 }
 
 void HybrisProximityAdaptor::stopSensor()
 {
     HybrisAdaptor::stopSensor();
-    if (!isRunning() && !powerStatePath.isEmpty())
+    if (!powerStatePath.isEmpty())
         writeToFile(powerStatePath, "0");
     sensordLogD() << "HybrisProximityAdaptor stop\n";
 }
