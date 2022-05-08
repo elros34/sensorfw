@@ -1,0 +1,5 @@
+*.list
+*.o
+*.so*
+Makefile*
+moc_*
